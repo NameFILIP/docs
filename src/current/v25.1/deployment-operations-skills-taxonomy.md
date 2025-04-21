@@ -17,6 +17,10 @@ The skills are organized into sections based on the following operational domain
 
 Each section includes links to relevant documentation for the listed skills.
 
+{{site.data.alerts.callout_success}}
+Cockroach Labs offers [Professional Services](https://www.cockroachlabs.com/company/professional-services/) that can assist you with getting applications into production faster and more efficiently.
+{{site.data.alerts.end}}
+
 ## Configuration
 
 - [Verify vCPU, RAM, storage, and disk IOPS performance]({% link {{ page.version.version }}/recommended-production-settings.md %}#hardware)
@@ -59,6 +63,8 @@ Each section includes links to relevant documentation for the listed skills.
 - [Imbalanced cluster load]({% link {{ page.version.version }}/architecture/replication-layer.md %}#load-based-replica-rebalancing)
 - [EOF errors]({% link {{ page.version.version }}/cluster-setup-troubleshooting.md %}#client-connection-issues)
 - [Changefeed is falling behind]({% link {{ page.version.version }}/advanced-changefeed-configuration.md %}#lagging-ranges)
+- [Get a "debug zip" file]({% link {{ page.version.version }}/cockroach-debug-zip.md %})
+- [Get a "tsdump" (timeseries dump) file]({% link {{ page.version.version }}/cockroach-debug-tsdump.md %})
 
 ## Disaster recovery
 
