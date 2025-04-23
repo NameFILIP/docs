@@ -6,7 +6,6 @@ docs_area: manage
 ---
 
 {% include_cached cockroachcloud/sso-intro.md %}
-
 This page describes Basic SSO and Cloud Organization SSO. To enable Cloud Organization SSO, refer to [Configure Cloud Organization SSO]({% link cockroachcloud/configure-cloud-org-sso.md %}).
 
 ## Basic SSO

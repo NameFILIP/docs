@@ -193,12 +193,32 @@ These instructions work for Okta. If you use a different IdP, refer to its docum
 1. The authentication method has been added but is disabled. To enable it, toggle **Enable**.
 1. Optionally, [configure advanced settings](#configure-advanced-settings) for the new authentication method.
 
+### Supported sign-in flows :
+
+- IdP-initiated SSO
+- SP-initiated SSO
+<br/>
+
+### Steps for SP-Initiated Single Sign-On (SSO):
+
+1. Navigate to your organization's Cockroach Cloud URL.
+1. Select the provided OIDC application for authentication.
+1. Log in using your Okta credentials.
+1. You will then be automatically redirected and logged into your Cockroach Labs account.
+
 ### SAML
 
 To configure a custom SAML authentication method, you need the following information from your IdP:
 
 - Sign On URL
 - Signing certificate
+
+### Supported SAML Attribute : 
+
+   | Name      | Value            |
+   | --------- | ---------------- |
+   | email     | user.email       |
+   | name      | user.displayName |
 
 These instructions work for Okta. If you use a different IdP, refer to its documentation for configuring SAML.
 
