@@ -10,9 +10,9 @@ You can use changefeed options to customize what information the message will co
 
 The possible envelope fields support use cases such as:
 
-- 
+- Enabling full-fidelity changefeed messages.
 - Routing events based on operation type.
-
+- Automatically generating or synchronizing schemas in downstream consumers.
 
 On this page, review:
 
@@ -24,28 +24,6 @@ On this page, review:
 {{site.data.alerts.callout_info}}
 You can also specify the _format_ of changefeed messages, such as Avro. For more details, refer to [Message formats]({% link {{ page.version.version }}/changefeed-messages.md %}#message-formats).
 {{site.data.alerts.end}}
-
-## Overview
-
-
-
-For a full reference of sink support, 
-
-{% comment  %}Add intro to use cases here and the schema / source payload configurability{% endcomment %}
-
-{% comment  %}
-. This is useful for broadcasting primary key changes efficiently if downstream consumers only need to know which keys changed.
-row: Sends the row’s new content directly as a flat JSON object, without any additional CDC metadata fields​
-COCKROACHLABS.COM
-. This envelope is simpler and omits fields like "after" or "updated".
-bare: Similar to row, but any metadata (timestamps, keys, etc.) is nested under a special "__crdb__" field instead of top-level. The bare envelope places the row’s columns at the top level of the message (instead of under "after"), and is the default for sinkless changefeeds (CDC queries)​
-COCKROACHLABS.COM
-.
-enriched: Provides an “enriched” message that can include additional metadata sections, such as information about the source cluster/node and the database schema for the change event. This envelope extends the default message structure with optional fields (configured via enriched_properties) to facilitate downstream processing that needs to know where the change came from or how to interpret the data (e.g., schema versioning). Enriched envelopes are typically used with sinks like Kafka or cloud sinks that can carry JSON or Avro payloads, and are not supported for sinkless feeds. (This envelope type was introduced in CockroachDB v25.2​
-COCKROACHLABS.COM
-.)
-In addition to choosing an envelope type, you can use various envelope-related options (specified in the WITH clause of CREATE CHANGEFEED) to include or modify certain fields in the emitted messages. For example, the diff option adds a “before” image of changed rows, and the updated option adds a timestamp indicating when the row was updated. These options are often used in conjunction with the default wrapped envelope but may not be applicable to all envelope types (details below).
-{% endcomment %}
 
 ## Use cases
 
@@ -65,21 +43,6 @@ CREATE TABLE public.products (
     CONSTRAINT products_pkey PRIMARY KEY (id ASC)
 );
 ~~~
-~~~sql
-CREATE TABLE public.orders (
-    id UUID NOT NULL DEFAULT gen_random_uuid(),
-    customer_name STRING NOT NULL,
-    email STRING NOT NULL,
-    product_id UUID NOT NULL,
-    quantity INT8 NOT NULL,
-    total_price DECIMAL(10,2) NOT NULL,
-    order_date TIMESTAMP NULL DEFAULT current_timestamp():::TIMESTAMP,
-    status STRING NULL DEFAULT 'pending':::STRING,
-    CONSTRAINT orders_pkey PRIMARY KEY (id ASC),
-    CONSTRAINT fk_product FOREIGN KEY (product_id) REFERENCES public.products(id),
-    CONSTRAINT check_quantity CHECK (quantity > 0:::INT8)
-);
-~~~
 
 {{site.data.alerts.callout_info}}
 The values that the `envelope` option accepts are compatible with different [changefeed sinks]({% link {{ page.version.version }}/changefeed-sinks.md %}), and the structure of the message will vary depending on the sink.
@@ -91,8 +54,133 @@ A _full fidelity_ changefeed message envelope ensures complete information about
 
 Use the `envelope=enriched, enriched_properties='source, schema', diff` options with `CREATE CHANGEFEED` to create a full fidelity envelope:
 
+~~~sql
+CREATE CHANGEFEED FOR TABLE products INTO 'kafka://localhost:9092' WITH envelope=enriched, enriched_properties='source,schema', diff, mvcc_timestamp;
+~~~
+
 ~~~json
-tbd
+{
+  "payload": {
+    "after": {
+      "category": "Electronics",
+      "created_at": "2025-04-24T14:59:28.96273",
+      "description": "Portable speaker with Bluetooth 5.0",
+      "id": "58390d92-2472-43e1-86bc-1642395e8dad",
+      "in_stock": true,
+      "name": "Bluetooth Speaker",
+      "price": 45.00
+    },
+    "before": null,
+    "op": "c",
+    "source": {
+      "changefeed_sink": "kafka",
+      "cluster_id": "38269e9c-9823-4568-875e-d867e12156f2",
+      "cluster_name": "",
+      "database_name": "test",
+      "db_version": "v25.2.0-beta.2",
+      "job_id": "1066445522313740289",
+      "mvcc_timestamp": "1745506768962755000.0000000000",
+      "node_id": "2",
+      "node_name": "localhost",
+      "origin": "cockroachdb",
+      "primary_keys": ["id"],
+      "schema_name": "public",
+      "source_node_locality": "",
+      "table_name": "products"
+    },
+    "ts_ns": 1745523745569419000
+  },
+  "schema": {
+    "fields": [
+      {
+        "field": "before",
+        "fields": [
+          { "field": "id", "optional": false, "type": "string" },
+          { "field": "name", "optional": false, "type": "string" },
+          { "field": "description", "optional": true, "type": "string" },
+          {
+            "field": "price",
+            "name": "decimal",
+            "optional": false,
+            "parameters": { "precision": "10", "scale": "2" },
+            "type": "float64"
+          },
+          { "field": "in_stock", "optional": true, "type": "boolean" },
+          { "field": "category", "optional": true, "type": "string" },
+          {
+            "field": "created_at",
+            "name": "timestamp",
+            "optional": true,
+            "type": "string"
+          }
+        ],
+        "name": "products.before.value",
+        "optional": true,
+        "type": "struct"
+      },
+      {
+        "field": "after",
+        "fields": [
+          { "field": "id", "optional": false, "type": "string" },
+          { "field": "name", "optional": false, "type": "string" },
+          { "field": "description", "optional": true, "type": "string" },
+          {
+            "field": "price",
+            "name": "decimal",
+            "optional": false,
+            "parameters": { "precision": "10", "scale": "2" },
+            "type": "float64"
+          },
+          { "field": "in_stock", "optional": true, "type": "boolean" },
+          { "field": "category", "optional": true, "type": "string" },
+          {
+            "field": "created_at",
+            "name": "timestamp",
+            "optional": true,
+            "type": "string"
+          }
+        ],
+        "name": "products.after.value",
+        "optional": false,
+        "type": "struct"
+      },
+      {
+        "field": "source",
+        "fields": [
+          { "field": "mvcc_timestamp", "optional": true, "type": "string" },
+          { "field": "ts_ns", "optional": true, "type": "int64" },
+          { "field": "ts_hlc", "optional": true, "type": "string" },
+          { "field": "table_name", "optional": false, "type": "string" },
+          { "field": "origin", "optional": false, "type": "string" },
+          { "field": "cluster_id", "optional": false, "type": "string" },
+          { "field": "node_id", "optional": false, "type": "string" },
+          { "field": "changefeed_sink", "optional": false, "type": "string" },
+          { "field": "schema_name", "optional": false, "type": "string" },
+          { "field": "node_name", "optional": false, "type": "string" },
+          { "field": "database_name", "optional": false, "type": "string" },
+          { "field": "source_node_locality", "optional": false, "type": "string" },
+          {
+            "field": "primary_keys",
+            "items": { "optional": false, "type": "string" },
+            "optional": false,
+            "type": "array"
+          },
+          { "field": "job_id", "optional": false, "type": "string" },
+          { "field": "db_version", "optional": false, "type": "string" },
+          { "field": "cluster_name", "optional": false, "type": "string" }
+        ],
+        "name": "cockroachdb.source",
+        "optional": true,
+        "type": "struct"
+      },
+      { "field": "ts_ns", "optional": false, "type": "int64" },
+      { "field": "op", "optional": false, "type": "string" }
+    ],
+    "name": "cockroachdb.envelope",
+    "optional": false,
+    "type": "struct"
+  }
+}
 ~~~
 
 
@@ -233,41 +321,48 @@ When you have multiple changefeeds running from your cluster, or your CockroachD
 Use the `envelope=enriched, enriched_properties=source` options with `CREATE CHANGEFEED` to include the `source` top-level field that contains metadata for the origin cluster and the changefeed job:
 
 ~~~sql
-CREATE CHANGEFEED FOR TABLE products, orders INTO 'kafka://localhost:9092' WITH envelope=enriched, enriched_properties=source;
+CREATE CHANGEFEED FOR TABLE products INTO 'kafka://localhost:9092' WITH envelope=enriched, enriched_properties=source;
 ~~~
 ~~~json
 {
   "after": {
-    "category": "Home & Kitchen",
-    "created_at": "2025-04-01T17:55:46.812942",
-    "description": "Adjustable LED desk lamp with touch controls",
-    "id": "32856ed8-34d3-45a3-a449-412bdeaa277c",
+    "category": "Electronics",
+    "created_at": "2025-04-24T14:59:28.96273",
+    "description": "Portable speaker with Bluetooth 5.0",
+    "id": "58390d92-2472-43e1-86bc-1642395e8dad",
     "in_stock": true,
-    "name": "LED Desk Lamp",
-    "price": 26.30
+    "name": "Bluetooth Speaker",
+    "price": 45.00
   },
   "op": "c",
   "source": {
     "changefeed_sink": "kafka",
-    "cluster_id": "3b38bd3f-af46-4083-9801-000000000000",
+    "cluster_id": "38269e9c-9823-4568-875e-d867e12156f2",
     "cluster_name": "",
-    "db_version": "v25.2.0-alpha.1",
-    "job_id": "1065892426841096193",
-    "node_id": "1",
+    "database_name": "test",
+    "db_version": "v25.2.0-beta.2",
+    "job_id": "1066457644516704257",
+    "node_id": "2",
     "node_name": "localhost",
-    "source_node_locality": "cloud=gce,region=us-east1,zone=us-east1-b"
+    "origin": "cockroachdb",
+    "primary_keys": [
+      "id"
+    ],
+    "schema_name": "public",
+    "source_node_locality": "",
+    "table_name": "products"
   },
-  "ts_ns": 1745429228563245000
+  "ts_ns": 1745527444910044000
 }
 ~~~
 
 For a sinkless changefeed,
 
 ~~~sql
-CREATE CHANGEFEED FOR TABLE products, orders WITH envelope=enriched, enriched_properties=source;
+CREATE CHANGEFEED FOR TABLE products WITH envelope=enriched, enriched_properties=source;
 ~~~
 ~~~
-{"key":"{\"id\": \"32856ed8-34d3-45a3-a449-412bdeaa277c\"}","table":"products","value":"{\"after\": {\"category\": \"Home \u0026 Kitchen\", \"created_at\": \"2025-04-01T17:55:46.812942\", \"description\": \"Adjustable LED desk lamp with touch controls\", \"id\": \"32856ed8-34d3-45a3-a449-412bdeaa277c\", \"in_stock\": true, \"name\": \"LED Desk Lamp\", \"price\": 22.30}, \"op\": \"c\", \"source\": {\"changefeed_sink\": \"sinkless buffer\", \"cluster_id\": \"3b38bd3f-af46-4083-9801-000000000000\", \"cluster_name\": \"\", \"db_version\": \"v25.2.0-alpha.1\", \"job_id\": \"0\", \"node_id\": \"3\", \"node_name\": \"localhost\", \"source_node_locality\": \"\"}, \"ts_ns\": 1745423277149449000}"}
+{"key":"{\"id\": \"df8f23a0-f490-4e0e-a1d0-2d1f8bd5ddea\"}","table":"products","value":"{\"after\": {\"category\": \"Home \u0026 Kitchen\", \"created_at\": \"2025-04-24T14:59:28.96273\", \"description\": \"Premium ceramic mug with 400ml capacity and matte finish\", \"id\": \"df8f23a0-f490-4e0e-a1d0-2d1f8bd5ddea\", \"in_stock\": true, \"name\": \"Coffee Mug\", \"price\": 14.99}, \"op\": \"c\", \"source\": {\"changefeed_sink\": \"sinkless buffer\", \"cluster_id\": \"38269e9c-9823-4568-875e-d867e12156f2\", \"cluster_name\": \"\", \"database_name\": \"test\", \"db_version\": \"v25.2.0-beta.2\", \"job_id\": \"0\", \"node_id\": \"1\", \"node_name\": \"localhost\", \"origin\": \"cockroachdb\", \"primary_keys\": [\"id\"], \"schema_name\": \"public\", \"source_node_locality\": \"\", \"table_name\": \"products\"}, \"ts_ns\": 1745527520674943000}"}
 ~~~
 
 ### Audit changes in data
@@ -334,121 +429,142 @@ Option | Description | Sink support
 `envelope=row`  | Emit the row data without any additional metadata field in the envelope. Not supported in Avro format or with the `diff` option. | Kafka, sinkless
 `envelope=wrapped` (default) | Produce changefeed messages in a wrapped structure with metadata and row data. `wrapped` includes an `"after"` field, and optionally a `"before"` field if `diff` is used. **Note:** Envelopes contain a primary key when your changefeed is emitting to a sink that does not have a message key as part of its protocol. By default, messages emitting to Kafka sinks do not have the primary key array, because the key is part of the message metadata. Use the `key_in_value` option to include a primary key array in messages emitted to Kafka sinks. | All
 `full_table_name` | Use the fully qualified table name (`database.schema.table`) in topics, subjects, schemas, and record output instead of the default table name. Including the full table name prevents unintended behavior when the same table name is present in multiple databases. | 
+`key_in_value` | Add a primary key array to the emitted message in Kafka sinks. This makes the primary key of a deleted row recoverable in sinks where each message has a value, but not a key. To only emit the primary key of the changed row in Kafka sinks, use `envelope=key_only`. | Kafka
 `mvcc_timestamp` | Emit the MVCC timestamp for each change event. The message envelope contains the MVCC timestamp of the changed row, even during the changefeed's initial scan. Provides a precise database commit timestamp, which is useful for debugging or strict ordering.
 `updated` | Add an `"updated"` timestamp field to each message, showing the commit time of the change. When the changefeed runs an initial scan or a schema change backfill, the `"updated"` field will reflect the time of the scan or backfill, not the MVCC timestamp. |
 
-### Examples
+### `envelope` option examples
 
+#### `wrapped`
 
-- `wrapped`
+`wrapped` is the default envelope structure for changefeed messages. This envelope contains an array of the primary key (or the key as part of the message metadata), a top-level field for the type of message, and the current state of the row (or `null` for [deleted rows](#delete-messages)).
 
-    `wrapped` is the default envelope structure for changefeed messages. This envelope contains an array of the primary key (or the key as part of the message metadata), a top-level field for the type of message, and the current state of the row (or `null` for [deleted rows](#delete-messages)).
+The message envelope contains a primary key array when your changefeed is emitting to a sink that does not have a message key as part of its protocol, (e.g., cloud storage, webhook sinks, or Google Pub/Sub). By default, messages emitted to Kafka sinks do not have the primary key array, because the key is part of the message metadata. If you would like messages emitted to Kafka sinks to contain a primary key array, you can use the [`key_in_value`]({% link {{ page.version.version }}/create-changefeed.md %}#key-in-value) option. Refer to the following message outputs for examples of this.
 
-    The message envelope contains a primary key array when your changefeed is emitting to a sink that does not have a message key as part of its protocol, (e.g., cloud storage, webhook sinks, or Google Pub/Sub). By default, messages emitted to Kafka sinks do not have the primary key array, because the key is part of the message metadata. If you would like messages emitted to Kafka sinks to contain a primary key array, you can use the [`key_in_value`]({% link {{ page.version.version }}/create-changefeed.md %}#key-in-value) option. Refer to the following message outputs for examples of this.
+Cloud storage sink:
 
-    Cloud storage sink:
+~~~sql
+CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://cloud';
+~~~
+~~~
+{"after": {"city": "seattle", "creation_time": "2019-01-02T03:04:05", "current_location": "86359 Jeffrey Ranch", "ext": {"color": "yellow"}, "id": "68ee1f95-3137-48e2-8ce3-34ac2d18c7c8", "owner_id": "570a3d70-a3d7-4c00-8000-000000000011", "status": "in_use", "type": "scooter"}, "key": ["seattle", "68ee1f95-3137-48e2-8ce3-34ac2d18c7c8"]}
+~~~
 
-    ~~~sql
-    CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://cloud';
-    ~~~
-    ~~~
-    {"after": {"city": "seattle", "creation_time": "2019-01-02T03:04:05", "current_location": "86359 Jeffrey Ranch", "ext": {"color": "yellow"}, "id": "68ee1f95-3137-48e2-8ce3-34ac2d18c7c8", "owner_id": "570a3d70-a3d7-4c00-8000-000000000011", "status": "in_use", "type": "scooter"}, "key": ["seattle", "68ee1f95-3137-48e2-8ce3-34ac2d18c7c8"]}
-    ~~~
+Kafka sink:
 
-    Kafka sink:
+Default when `envelope=wrapped` or `envelope` is not specified:
 
-    Default when `envelope=wrapped` or `envelope` is not specified:
+~~~sql
+CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://kafka';
+~~~
+~~~
+{"after": {"city": "washington dc", "creation_time": "2019-01-02T03:04:05", "current_location": "24315 Elizabeth Mountains", "ext": {"color": "yellow"}, "id": "dadc1c0b-30f0-4c8b-bd16-046c8612bbea", "owner_id": "034075b6-5380-4996-a267-5a129781f4d3", "status": "in_use", "type": "scooter"}}
+~~~
 
-    ~~~sql
-    CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://kafka';
-    ~~~
-    ~~~
-    {"after": {"city": "washington dc", "creation_time": "2019-01-02T03:04:05", "current_location": "24315 Elizabeth Mountains", "ext": {"color": "yellow"}, "id": "dadc1c0b-30f0-4c8b-bd16-046c8612bbea", "owner_id": "034075b6-5380-4996-a267-5a129781f4d3", "status": "in_use", "type": "scooter"}}
-    ~~~
+Kafka sink message with `key_in_value` provided:
 
-    Kafka sink message with `key_in_value` provided:
+~~~sql
+CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://kafka' WITH key_in_value, envelope=wrapped;
+~~~
+~~~
+{"after": {"city": "washington dc", "creation_time": "2019-01-02T03:04:05", "current_location": "46227 Jeremy Haven Suite 92", "ext": {"brand": "Schwinn", "color": "red"}, "id": "298cc7a0-de6b-4659-ae57-eaa2de9d99c3", "owner_id": "beda1202-63f7-41d2-aa35-ee3a835679d1", "status": "in_use", "type": "bike"}, "key": ["washington dc", "298cc7a0-de6b-4659-ae57-eaa2de9d99c3"]}
+~~~
 
-    ~~~sql
-    CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://kafka' WITH key_in_value, envelope=wrapped;
-    ~~~
-    ~~~
-    {"after": {"city": "washington dc", "creation_time": "2019-01-02T03:04:05", "current_location": "46227 Jeremy Haven Suite 92", "ext": {"brand": "Schwinn", "color": "red"}, "id": "298cc7a0-de6b-4659-ae57-eaa2de9d99c3", "owner_id": "beda1202-63f7-41d2-aa35-ee3a835679d1", "status": "in_use", "type": "bike"}, "key": ["washington dc", "298cc7a0-de6b-4659-ae57-eaa2de9d99c3"]}
-    ~~~
+#### `enriched`
 
-- `bare`
+{% include_cached new-in.html version="v25.2" %} `enriched` introduces additional metadata to the envelope, which is further configurable with the `enriched_properties` option. This envelope option is supported for [Kafka sinks]({% link {{ page.version.version }}/changefeed-sinks.md %}#kafka), [webhook]({% link {{ page.version.version }}/changefeed-sinks.md %}#webhook), Google Cloud Pub/Sub, and sinkless changefeeds.
 
-    `bare` removes the `after` key from the changefeed message and stores any metadata in a `crdb` field. When used with [`avro`](#avro) format, `record` will replace the `after` key.
-
-    Cloud storage sink:
-
-    ~~~sql
-    CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://cloud' WITH envelope=bare;
-    ~~~
-    ~~~
-    {"__crdb__": {"key": ["washington dc", "cd48e501-e86d-4019-9923-2fc9a964b264"]}, "city": "washington dc", "creation_time": "2019-01-02T03:04:05", "current_location": "87247 Diane Park", "ext": {"brand": "Fuji", "color": "yellow"}, "id": "cd48e501-e86d-4019-9923-2fc9a964b264", "owner_id": "a616ce61-ade4-43d2-9aab-0e3b24a9aa9a", "status": "available", "type": "bike"}
-    ~~~
-
-    {% include {{ page.version.version }}/cdc/bare-envelope-cdc-queries.md %}
-
-    In CDC queries:
-
-    A changefeed containing a `SELECT` clause without any additional options:
+- To add the operation type and the timestamp of the change event to envelope, use `envelope=enriched`:
 
     ~~~sql
-    CREATE CHANGEFEED INTO 'external://kafka' AS SELECT city, type FROM movr.vehicles;
+    CREATE CHANGEFEED FOR TABLE products INTO 'external://kafka' WITH envelope=enriched;
     ~~~
     ~~~
-    {"city": "los angeles", "type": "skateboard"}
-    ~~~
-
-    A changefeed containing a `SELECT` clause with the [`topic_in_value`]({% link {{ page.version.version }}/create-changefeed.md %}#topic-in-value) option specified:
-
-    ~~~sql
-    CREATE CHANGEFEED INTO 'external://kafka' WITH topic_in_value AS SELECT city, type FROM movr.vehicles;
-    ~~~
-    ~~~
-    {"__crdb__": {"topic": "vehicles"}, "city": "los angeles", "type": "skateboard"}
+    {"after": {"category": "Electronics", "created_at": "2025-04-24T14:59:28.96273", "description": "Ergonomic wireless mouse with USB receiver", "id": "cb1a3e43-dccf-422f-a27d-ea027c233682", "in_stock": true, "name": "Wireless Mouse", "price": 29.99}, "op": "c", "ts_ns": 1745525261013511000}
     ~~~
 
-- `key_only`
-
-    `key_only` emits only the key and no value, which is faster if you only need to know the key of the changed row. This envelope option is only supported for [Kafka sinks]({% link {{ page.version.version }}/changefeed-sinks.md %}#kafka) or sinkless changefeeds.
-
-    Kafka sink:
+- To add the origin of the change data and the schema of the payload, use the `envelope=enriched` and `enriched_properties='source,schema'`:
 
     ~~~sql
-    CREATE CHANGEFEED FOR TABLE users INTO 'external://kafka' WITH envelope=key_only;
+    CREATE CHANGEFEED FOR TABLE products INTO 'external://kafka' WITH envelope=enriched, enriched_properties='source,schema';
     ~~~
     ~~~
-    ["boston", "22222222-2222-4200-8000-000000000002"]
-    ~~~
-
-    {{site.data.alerts.callout_info}}
-    It is necessary to set up a [Kafka consumer](https://docs.confluent.io/platform/current/clients/consumer.html) to display the key because the key is part of the metadata in Kafka messages, rather than in its own field. When you start a Kafka consumer, you can use `--property print.key=true` to have the key print in the changefeed message.
-    {{site.data.alerts.end}}
-
-    Sinkless changefeeds:
-
-    ~~~sql
-    CREATE CHANGEFEED FOR TABLE users WITH envelope=key_only;
-    ~~~
-    ~~~
-    {"key":"[\"seattle\", \"fff726cc-13b3-475f-ad92-a21cafee5d3f\"]","table":"users","value":""}
+    {"payload": {"after": {"category": "Electronics", "created_at": "2025-04-24T14:59:28.96273", "description": "Ergonomic wireless mouse with USB receiver", "id": "cb1a3e43-dccf-422f-a27d-ea027c233682", "in_stock": true, "name": "Wireless Mouse", "price": 29.99}, "op": "c", "source": {"changefeed_sink": "kafka", "cluster_id": "38269e9c-9823-4568-875e-d867e12156f2", "cluster_name": "", "database_name": "test", "db_version": "v25.2.0-beta.2", "job_id": "1066452286961614849", "node_id": "2", "node_name": "localhost", "origin": "cockroachdb", "primary_keys": ["id"], "schema_name": "public", "source_node_locality": "", "table_name": "products"}, "ts_ns": 1745525809913428000}, "schema": {"fields": [{"field": "after", "fields": [{"field": "id", "optional": false, "type": "string"}, {"field": "name", "optional": false, "type": "string"}, {"field": "description", "optional": true, "type": "string"}, {"field": "price", "name": "decimal", "optional": false, "parameters": {"precision": "10", "scale": "2"}, "type": "float64"}, {"field": "in_stock", "optional": true, "type": "boolean"}, {"field": "category", "optional": true, "type": "string"}, {"field": "created_at", "name": "timestamp", "optional": true, "type": "string"}], "name": "products.after.value", "optional": false, "type": "struct"}, {"field": "source", "fields": [{"field": "mvcc_timestamp", "optional": true, "type": "string"}, {"field": "ts_ns", "optional": true, "type": "int64"}, {"field": "ts_hlc", "optional": true, "type": "string"}, {"field": "table_name", "optional": false, "type": "string"}, {"field": "origin", "optional": false, "type": "string"}, {"field": "cluster_id", "optional": false, "type": "string"}, {"field": "node_id", "optional": false, "type": "string"}, {"field": "changefeed_sink", "optional": false, "type": "string"}, {"field": "schema_name", "optional": false, "type": "string"}, {"field": "node_name", "optional": false, "type": "string"}, {"field": "database_name", "optional": false, "type": "string"}, {"field": "source_node_locality", "optional": false, "type": "string"}, {"field": "primary_keys", "items": {"optional": false, "type": "string"}, "optional": false, "type": "array"}, {"field": "job_id", "optional": false, "type": "string"}, {"field": "db_version", "optional": false, "type": "string"}, {"field": "cluster_name", "optional": false, "type": "string"}], "name": "cockroachdb.source", "optional": true, "type": "struct"}, {"field": "ts_ns", "optional": false, "type": "int64"}, {"field": "op", "optional": false, "type": "string"}], "name": "cockroachdb.envelope", "optional": false, "type": "struct"}}
     ~~~
 
-- `row`
+#### `bare`
 
-    `row` emits the row without any additional metadata fields in the message. This envelope option is only supported for [Kafka sinks]({% link {{ page.version.version }}/changefeed-sinks.md %}#kafka) or sinkless changefeeds. `row` does not support [`avro`](#avro) format—if you are using `avro`, refer to the [`bare`](#bare) envelope option.
+`bare` removes the `after` key from the changefeed message and stores any metadata in a `crdb` field. When used with [`avro`](#avro) format, `record` will replace the `after` key.
 
-    Kafka sink:
+Cloud storage sink:
 
-    ~~~sql
-    CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://kafka' WITH envelope=row;
-    ~~~
-    ~~~
-    {"city": "washington dc", "creation_time": "2019-01-02T03:04:05", "current_location": "85551 Moore Mountains Apt. 47", "ext": {"color": "red"}, "id": "d3b37607-1e9f-4e25-b772-efb9374b08e3", "owner_id": "4f26b516-f13f-4136-83e1-2ea1ae151c20", "status": "available", "type": "skateboard"}
-    ~~~
+~~~sql
+CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://cloud' WITH envelope=bare;
+~~~
+~~~
+{"__crdb__": {"key": ["washington dc", "cd48e501-e86d-4019-9923-2fc9a964b264"]}, "city": "washington dc", "creation_time": "2019-01-02T03:04:05", "current_location": "87247 Diane Park", "ext": {"brand": "Fuji", "color": "yellow"}, "id": "cd48e501-e86d-4019-9923-2fc9a964b264", "owner_id": "a616ce61-ade4-43d2-9aab-0e3b24a9aa9a", "status": "available", "type": "bike"}
+~~~
 
+{% include {{ page.version.version }}/cdc/bare-envelope-cdc-queries.md %}
+
+In CDC queries:
+
+A changefeed containing a `SELECT` clause without any additional options:
+
+~~~sql
+CREATE CHANGEFEED INTO 'external://kafka' AS SELECT city, type FROM movr.vehicles;
+~~~
+~~~
+{"city": "los angeles", "type": "skateboard"}
+~~~
+
+A changefeed containing a `SELECT` clause with the [`topic_in_value`]({% link {{ page.version.version }}/create-changefeed.md %}#topic-in-value) option specified:
+
+~~~sql
+CREATE CHANGEFEED INTO 'external://kafka' WITH topic_in_value AS SELECT city, type FROM movr.vehicles;
+~~~
+~~~
+{"__crdb__": {"topic": "vehicles"}, "city": "los angeles", "type": "skateboard"}
+~~~
+
+#### `key_only`
+
+`key_only` emits only the key and no value, which is faster if you only need to know the key of the changed row. This envelope option is only supported for [Kafka sinks]({% link {{ page.version.version }}/changefeed-sinks.md %}#kafka) or sinkless changefeeds.
+
+Kafka sink:
+
+~~~sql
+CREATE CHANGEFEED FOR TABLE users INTO 'external://kafka' WITH envelope=key_only;
+~~~
+~~~
+["boston", "22222222-2222-4200-8000-000000000002"]
+~~~
+
+{{site.data.alerts.callout_info}}
+It is necessary to set up a [Kafka consumer](https://docs.confluent.io/platform/current/clients/consumer.html) to display the key because the key is part of the metadata in Kafka messages, rather than in its own field. When you start a Kafka consumer, you can use `--property print.key=true` to have the key print in the changefeed message.
+{{site.data.alerts.end}}
+
+Sinkless changefeeds:
+
+~~~sql
+CREATE CHANGEFEED FOR TABLE users WITH envelope=key_only;
+~~~
+~~~
+{"key":"[\"seattle\", \"fff726cc-13b3-475f-ad92-a21cafee5d3f\"]","table":"users","value":""}
+~~~
+
+#### `row`
+
+`row` emits the row without any additional metadata fields in the message. This envelope option is only supported for [Kafka sinks]({% link {{ page.version.version }}/changefeed-sinks.md %}#kafka) or sinkless changefeeds. `row` does not support [`avro`](#avro) format—if you are using `avro`, refer to the [`bare`](#bare) envelope option.
+
+Kafka sink:
+
+~~~sql
+CREATE CHANGEFEED FOR TABLE vehicles INTO 'external://kafka' WITH envelope=row;
+~~~
+~~~
+{"city": "washington dc", "creation_time": "2019-01-02T03:04:05", "current_location": "85551 Moore Mountains Apt. 47", "ext": {"color": "red"}, "id": "d3b37607-1e9f-4e25-b772-efb9374b08e3", "owner_id": "4f26b516-f13f-4136-83e1-2ea1ae151c20", "status": "available", "type": "skateboard"}
+~~~
 
 ## Field reference
 
@@ -457,19 +573,30 @@ CockroachDB provides multiple changefeed envelopes, each supported by different 
 The possible top-level fields in a JSON-formatted envelope:
 
 - `payload`: The change event data. `payload` is a wrapper only with webhook sinks and when the `enriched_properties` options is used.
-    - `after`: The state of the row after the change (`NULL` for deletes).
-    - `before`: The state of the row before the change (only present for updates and deletes).
-    - `key`: An array composed of the row's `PRIMARY KEY` field(s) (e.g., `[1]` for JSON or `{"id":{"long":1}}` for Avro). The message envelope contains a primary key array when your changefeed is emitting to a sink that does not have a message key as part of its protocol, (e.g., cloud storage, webhook sinks, or Google Pub/Sub). By default, messages emitted to Kafka sinks do not have the primary key array, because the key is part of the message metadata. If you would like messages emitted to Kafka sinks to contain a primary key array, you can use the [`key_in_value`]({% link {{ page.version.version }}/create-changefeed.md %}#key-in-value) option.
-    - `op`: The type of change operation.
-    - `source`: Cluster, node, and sink information for the data's origin.
+    - `after`: The state of the row after the change. This contains the column names and values after an `INSERT` or `UPDATE`. For delete operations, `after` will be `NULL`. In the default `wrapped` envelope, every message for an insert/update has an `"after"` field with the new data. In a `row` envelope, the whole message is the state of the row without the `"after"` wrapper, and in the `key_only` envelope there is no `after` field because only the key is sent.
+    - `before`: The state of the row before the change. This field appears only if the `diff` option is enabled on a `wrapped` (or `enriched`) envelope. For updates, `"before"` is the previous values of the row before the update. For deletes, `"before"` is the last state of the row. For inserts, `"before"` will be `NULL` (the row had no prior state). This field is useful for auditing changes or computing differences. (Not applicable to envelopes like `row` or `key_only`, which do not support the `"before"` or `"after"` fields.)
+    - `key`: An array composed of the row's `PRIMARY KEY` field(s) (e.g., `[1]` for JSON or `{"id":{"long":1}}` for Avro). The message envelope contains a primary key array when your changefeed is emitting to a sink that does not have a message key as part of its protocol, (e.g., cloud storage, webhook sinks, or Pub/Sub). By default, messages emitted to Kafka sinks do not have the primary key array, because the key is part of the message metadata. If you would like messages emitted to Kafka sinks to contain a primary key array, you can use the [`key_in_value`](#key-in-value) option.
+    - `op`: The type of change operation. `c` for `INSERT`, `u` for `UPDATE`, `d` for `DELETE`.
+    - `source`: Metadata about the source of the change event. This is included when using `envelope=enriched` with `enriched_properties='source'` (or `'source,schema'`). The `source` field includes the following fields about the cluster running the changefeed:
+        - `changefeed_sink`: The sink type.
+        - `cluster_id`: The ID.
+        - `cluster_name`: The name.
+        - `db_version`: The CockroachDB version.
+        - `job_id`: The changefeed's job ID.
+        - `mvcc_timestamp`:  (if the `mvcc_timestamp` option is included).
+        - `node_id`: The node that emitted the changefeed message.
+        - `node_name`: The name of the node that emitted the changefeed message.
+        - `origin`: 
+        - `primary_keys`: 
+        - `schema_name`:
+        - `source_node_locality`: The locality of the node that emitted the changefeed messages, e.g., `"cloud=gce,region=us-east1,zone=us-east1-b"`.
+        - `table_name`:
     - `ts_ns`: Timestamp of the change event in nanoseconds since the epoch.
 - `schema`: The schema and type of each payload field.
 
 Depending on the envelope and options used, changefeed messages can include a variety of fields. Following is a list of the key fields that can appear in changefeed message envelopes, and what each represents:
 
 - `key` – An array of the primary key value(s) for the row that changed. For example, if a table’s primary key is a single column `id = 5`, the key might be `[5]`. For a composite primary key, e.g., `(order_id, line_number)`, the key could look like `[101, 5]`. In Kafka sinks, the `key` is typically delivered as the Kafka message key (not in the JSON payload) by default, but it can be included in the value with certain options (e.g., `key_in_value` for Kafka, or by using a sink like cloud storage where key is part of the JSON). This identifies *which row* the change pertains to.
-
-- `after` – The state of the row **after** the change. This is a JSON object containing column names and values after an insert or update. For delete operations, `after` will be `null` (since after the deletion the row does not exist). In the default `wrapped` envelope, every message for an insert/update has an `"after"` field with the new data. In a `row` envelope, the whole message is effectively the “after” state without a wrapper, and in `key_only` envelope there is no `after` field at all (only the key is sent).
 
 - `before` – The state of the row **before** the change. This field appears only if the `diff` option is enabled on a `wrapped` (or `enriched`) changefeed. For updates, `"before"` is the previous values of the row (prior to the update); for deletes, `"before"` is the last state of the row (since the row is about to be deleted). For inserts, `"before"` will be `null` (the row had no prior state). This field is useful for auditing changes or computing differences. (Not applicable to envelopes like `row` or `key_only` which don’t support a before/after structure.)
 
